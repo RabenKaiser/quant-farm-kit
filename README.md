@@ -1,39 +1,26 @@
-# DEPOT GITHUB — quant-farm-kit (voie retenue le 16/10)
+﻿# quant-farm-kit
 
-Le depot existe : `git@github.com:RabenKaiser/quant-farm-kit.git`.
-La release n'est plus necessaire : les URL brutes du depot suffisent.
+Kit d'amorcage d'une instance Vast pour la meule de tests MT5.
+Aucun identifiant, aucune donnee de marche : l'instance tire ses donnees elle-meme
+avec son IP fraiche.
 
-## 1. La seule action humaine : la cle de depot (deploy key)
+## Contenu
 
-Le depot peut rester PRIVE — l'instance n'y accede pas par URL brute alors ? SI :
-`raw.githubusercontent.com` sur un depot PRIVE exige un jeton. Deux options :
-- depot PUBLIC (contenu verifie : aucun compte, aucun mot de passe, aucune donnee) ;
-- ou jeton fin-grain lecture seule en variable `KIT_TOKEN` du template.
-Par defaut : depot PUBLIC.
+| fichier | role |
+|---|---|
+| `onstart_template.sh` | le script de demarrage (a mettre dans le template Vast) |
+| `verifier_pret.sh` | auto-test de premier demarrage -> `/workspace/resultats/etat_pret.txt` |
+| `kit/mt5prog.tgz.part-aa` + `part-ab` | le programme MT5 6230 prouve, decoupe (limite GitHub : 100 Mo) |
+| `kit/scripts_pack.tgz` | scripts python + EA a jalons, SANS identifiants |
+| `image/Dockerfile` + `image/no_broker.c` | variante image cuite (VM uniquement, plus tard) |
 
-## 2. Contenu du depot (pousse par la meule locale)
+## Template Vast
 
-```
-README.md                 <- ce fichier
-onstart_template.sh       <- le template lui-meme
-kit/mt5prog.tgz.part-aa   <- le programme MT5, DECOUPE (limite GitHub : 100 Mo)
-kit/mt5prog.tgz.part-ab
-kit/scripts_pack.tgz      <- scripts + EA a jalons (sans mot de passe)
-image/Dockerfile          <- pour la variante image cuite (VM, plus tard)
-image/no_broker.c
-```
+- Image : `ubuntu:24.04`
+- `PROVISIONING_SCRIPT = https://raw.githubusercontent.com/RabenKaiser/quant-farm-kit/main/onstart_template.sh`
+- Variables : `KIT_URL`, `DEMO_LOGIN`, `DEMO_PASSWORD` (les identifiants ne vivent
+  QUE la, jamais dans ce depot)
 
-## 3. Le template Vast
+## Verifier apres le boot
 
-- Image : `ubuntu:24.04` (ou toute base CPU recente)
-- `PROVISIONING_SCRIPT=https://raw.githubusercontent.com/RabenKaiser/quant-farm-kit/main/onstart_template.sh`
-- Variables d'environnement :
-  - `KIT_URL=https://raw.githubusercontent.com/RabenKaiser/quant-farm-kit/main/kit`
-  - `DEMO_LOGIN=603100618` et `DEMO_PASSWORD=...` (le paquet ne contient AUCUN mot de passe depuis le 16/10 — redaction confirmee)
-
-## 4. Ce que le kit ne contient PAS
-
-AUCUN compte, AUCUN mot de passe (le travailleur lit DEMO_LOGIN/DEMO_PASSWORD de
-l'environnement), AUCUNE donnee de marche : l'instance tire les siennes avec son IP
-fraiche — PREEUVE le 16/10 : autorisation reussie sur l'IP de l'instance,
-417 symboles synchronises.
+`cat /workspace/resultats/etat_pret.txt` -> doit finir par `VERDICT : PRET`.
