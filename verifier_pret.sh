@@ -73,8 +73,9 @@ ligne ""
 ligne "--- premier contact (le vrai test) ---"
 if pgrep -f terminal64 >/dev/null 2>&1; then
     ligne "  un terminal tourne deja : on lit son journal"
+elif ! cd "$MT5" 2>/dev/null; then
+    ko "impossible d'entrer dans $MT5 : le programme MT5 est absent"
 else
-    cd "$MT5"
     setsid xvfb-run -a wine terminal64.exe /portable /config:config\\contact.ini \
         > "$RES/premier_contact.log" 2>&1 < /dev/null &
     ligne "  terminal lance, attente de 150 s (base de symboles)"
