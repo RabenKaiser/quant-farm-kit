@@ -259,8 +259,12 @@ if [ "$WORKERS" -gt 0 ] 2>/dev/null && [ -f "$TRAV" ] && [ -f "$FILE" ]; then
         DD="${WORKSPACE:-/workspace}/W$(printf %02d "$i")"
         if [ ! -f "$DD/terminal64.exe" ]; then
             mkdir -p "$DD"
-            cp -a "$MT5/." "$DD/" 2>/dev/null
-            echo "  datadir W$(printf %02d "$i") prepare (copie du programme)"
+            # LIENS DURS : mesure du 16/10 -- une copie complete coute 302 Mo par emplacement,
+            # la meme chose par liens durs 92 Ko. Les fichiers du programme ne sont JAMAIS
+            # modifies (verifie : inode ET md5 de terminal64.exe inchanges apres un test
+            # complet) ; seuls MQL5/ bases/ config/ Tester/ logs/ deviennent prives a l'usage.
+            cp -al "$MT5/." "$DD/" 2>/dev/null || cp -a "$MT5/." "$DD/" 2>/dev/null
+            echo "  datadir W$(printf %02d "$i") prepare (liens durs)"
         fi
         # L'EA : le worker ecrit Expert=eepeek\TRIGGER_LAB.ex5, donc le fichier doit
         # etre dans <datadir>/MQL5/Experts/eepeek/. Le programme MT5 ne le contient PAS
@@ -283,11 +287,16 @@ if [ "$WORKERS" -gt 0 ] 2>/dev/null && [ -f "$TRAV" ] && [ -f "$FILE" ]; then
         if pgrep -f "travailleur_vast.py --travailleur $i " >/dev/null 2>&1; then
             echo "  travailleur $i deja actif"
         else
+            # PORT D'AGENT DISTINCT par travailleur (mesure du 16/10 : sans cela un seul
+            # testeur travaille a la fois) et ETALEMENT : on n'ouvre le suivant qu'apres
+            # que le precedent a eu le temps de demarrer son terminal.
             setsid nohup python3 "$TRAV" --travailleur "$i" --datadir "$DD" \
                 --prefixe-wine "$WINEPREFIX" --db "$FILE" --sortie "$RES" \
                 --setfiles "$SETF" --delai-max "${DELAI_MAX:-420}" \
+                --port-agent "$((3000 + i))" \
                 >> "$RES/travailleur_$i.log" 2>&1 < /dev/null &
-            echo "  travailleur $i lance (datadir $DD, journal $RES/travailleur_$i.log)"
+            echo "  travailleur $i lance (datadir $DD, agent $((3000 + i)), journal $RES/travailleur_$i.log)"
+            sleep "${ETALEMENT:-20}"
         fi
         i=$((i + 1))
     done
