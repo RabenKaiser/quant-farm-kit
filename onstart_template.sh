@@ -123,3 +123,21 @@ else
 fi
 
 echo "== onstart termine $(date -Is) =="
+
+# --- 7. auto-test de premier demarrage : ecrit /workspace/resultats/etat_pret.txt
+# En tache de fond pour ne pas retarder le boot : il lance le terminal maitre, attend
+# 150 s, lit le journal et rend un VERDICT lisible (PRET / A CORRIGER) au lieu de
+# laisser l'operateur fouiller les journaux.
+VERIF="${WORKSPACE:-/workspace}/verifier_pret.sh"
+[ -f "$VERIF" ] || VERIF="${WORKSPACE:-/workspace}/scripts/verifier_pret.sh"
+# sinon on le prend a cote de ce script, dans le depot (il est versionne la-bas)
+if [ ! -f "$VERIF" ] && [ -n "${KIT_URL:-}" ]; then
+    curl -fsSL -o "${WORKSPACE:-/workspace}/verifier_pret.sh" "${KIT_URL%/*}/verifier_pret.sh" 2>/dev/null
+    VERIF="${WORKSPACE:-/workspace}/verifier_pret.sh"
+fi
+if [ -f "$VERIF" ]; then
+    setsid nohup bash "$VERIF" >> "$RES/etat_pret.log" 2>&1 < /dev/null &
+    echo "auto-test de premier demarrage lance : etat dans $RES/etat_pret.txt (2-3 min)"
+else
+    echo "!! verifier_pret.sh introuvable : pas d'auto-test (kit incomplet ?)"
+fi
