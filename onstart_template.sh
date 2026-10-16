@@ -71,6 +71,10 @@ if [ ! -f "$MT5/terminal64.exe" ]; then
     cat /tmp/mt5prog.tgz.part-aa /tmp/mt5prog.tgz.part-ab > /tmp/mt5prog.tgz
     curl -fsSL --retry 3 -o /tmp/scripts_pack.tgz "$KIT_URL/scripts_pack.tgz"
     tar -xzf /tmp/mt5prog.tgz      -C "$MT5"
+    # PIEGE (repetition generale du 16/10) : sur une instance NEUVE le dossier
+    # n'existe pas encore -- sans ce mkdir, tar echoue et l'instance demarre sans
+    # scripts (donc sans file de travail) tout en ayant l'air d'avoir reussi.
+    mkdir -p "${WORKSPACE:-/workspace}/scripts"
     tar -xzf /tmp/scripts_pack.tgz -C "${WORKSPACE:-/workspace}/scripts"
     echo "  kit en place : $(du -sh "$MT5" | cut -f1)"
 else
