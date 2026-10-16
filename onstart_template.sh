@@ -109,17 +109,60 @@ echo "  ini ecrit (login ${DEMO_LOGIN:-798154993}, identifiants ${DEMO_PASSWORD:
 export LD_PRELOAD=/usr/local/lib/no_broker.so
 [ -f /usr/local/lib/no_broker.so ] || { echo "stub no_broker absent : on continue sans (l'IP est fraiche)" ; unset LD_PRELOAD; }
 
-# --- 6. superviseur de la meule
-cd "$MT5"
-SUP="${WORKSPACE:-/workspace}/scripts/superviseur_boucle.py"
-[ -f "$SUP" ] || SUP="${WORKSPACE:-/workspace}/scripts/research/superviseur_boucle.py"
-if [ ! -f "$SUP" ]; then
-    echo "!! superviseur introuvable (cherche dans scripts/ et scripts/research/) - kit incomplet ?"
-elif ! pgrep -f superviseur_boucle >/dev/null 2>&1; then
-    nohup python3 "$SUP" >> "$RES/superviseur.log" 2>&1 &
-    echo "superviseur lance (pid $!) : $SUP"
+# --- 6. les travailleurs (et PAS le surveillant de la boucle locale)
+# Deux mesures du 16/10 en LISANT le code de travailleur_vast.py :
+#  a) superviseur_boucle.py est le chien de garde de la boucle LOCALE (12h00->03h00,
+#     relance boucle_nuit_locale.py) : le lancer sur une instance n'a aucun sens ;
+#  b) le travailleur impose DISPLAY=:99 et WINEPREFIX=--prefixe-wine, et il lance
+#     terminal64.exe avec cwd=<datadir> : il faut donc UN X VIRTUEL PERSISTANT et
+#     une COPIE du programme dans chaque datadir.
+# WORKERS = nombre de travailleurs a lancer (0 = aucun : on affiche la commande).
+WORKERS="${WORKERS:-0}"
+FILE="${QUEUE_DB:-${WORKSPACE:-/workspace}/queue/usine_indus.db}"
+TRAV="${WORKSPACE:-/workspace}/scripts/burst/travailleur_vast.py"
+if [ "$WORKERS" -gt 0 ] 2>/dev/null && [ -f "$TRAV" ] && [ -f "$FILE" ]; then
+    # 1. X virtuel persistant sur :99 (le travailleur y envoie ses terminaux)
+    if ! pgrep -f "Xvfb :99" >/dev/null 2>&1; then
+        setsid nohup Xvfb :99 -screen 0 1280x1024x24 > "$RES/xvfb99.log" 2>&1 < /dev/null &
+        sleep 3
+        echo "  Xvfb :99 lance (le travailleur l'exige)"
+    fi
+    # 2. les setfiles : le travailleur verifie que chaque ligne du bilan appartient
+    #    bien a son fichier de reglages. Sans eux, il ne peut rien valider.
+    SETF="${SETFILES_DIR:-$WINEPREFIX/drive_c/users/root/AppData/Roaming/MetaQuotes/Terminal/Common/Files}"
+    mkdir -p "$SETF"
+    NSET=$(ls -1 "$SETF" 2>/dev/null | wc -l)
+    [ "$NSET" -gt 0 ] && echo "  setfiles : $NSET fichier(s) dans $SETF" \
+                      || echo "  !! AUCUN setfile dans $SETF : les lots seront refuses"
+    # 3. un travailleur par datadir, chacun avec SA copie du programme
+    i=0
+    while [ "$i" -lt "$WORKERS" ]; do
+        DD="${WORKSPACE:-/workspace}/W$(printf %02d "$i")"
+        if [ ! -f "$DD/terminal64.exe" ]; then
+            mkdir -p "$DD"
+            cp -a "$MT5/." "$DD/" 2>/dev/null
+            echo "  datadir W$(printf %02d "$i") prepare (copie du programme)"
+        fi
+        if pgrep -f "travailleur_vast.py --travailleur $i " >/dev/null 2>&1; then
+            echo "  travailleur $i deja actif"
+        else
+            setsid nohup python3 "$TRAV" --travailleur "$i" --datadir "$DD" \
+                --prefixe-wine "$WINEPREFIX" --db "$FILE" --sortie "$RES" \
+                --setfiles "$SETF" --delai-max "${DELAI_MAX:-420}" \
+                >> "$RES/travailleur_$i.log" 2>&1 < /dev/null &
+            echo "  travailleur $i lance (datadir $DD, journal $RES/travailleur_$i.log)"
+        fi
+        i=$((i + 1))
+    done
+elif [ ! -f "$TRAV" ]; then
+    echo "  !! travailleur_vast.py absent : kit incomplet"
+elif [ ! -f "$FILE" ]; then
+    echo "  aucune file de lots dans $FILE : travailleurs NON lances."
+    echo "  deposer la base de la file (usine_indus.db) dans $(dirname "$FILE"),"
+    echo "  puis relancer ce script avec WORKERS=<nombre> pour demarrer."
 else
-    echo "superviseur deja actif"
+    echo "  WORKERS=0 : travailleurs non lances (commande disponible ci-dessus)."
+    echo "  python3 $TRAV --travailleur 0 --datadir ${WORKSPACE:-/workspace}/W00 --db $FILE --sortie $RES"
 fi
 
 echo "== onstart termine $(date -Is) =="
