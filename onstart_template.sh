@@ -105,9 +105,20 @@ MaxBars=5000000
 EOF
 echo "  ini ecrit (login ${DEMO_LOGIN:-798154993}, identifiants ${DEMO_PASSWORD:+fournis}${DEMO_PASSWORD:-absents})"
 
-# --- 5. quarantaine respectee par construction
-export LD_PRELOAD=/usr/local/lib/no_broker.so
-[ -f /usr/local/lib/no_broker.so ] || { echo "stub no_broker absent : on continue sans (l'IP est fraiche)" ; unset LD_PRELOAD; }
+# --- 5. quarantaine OFF par defaut : l'instance a besoin du COURTIER pour tirer ses
+# donnees (c'est tout l'interet de son IP fraiche). Le stub no_broker.so fait echouer
+# connect()/getaddrinfo() : il ne doit etre actif que pour le travail HORS LIGNE.
+# NOBROKER=1 l'active ; absent ou 0 = connexions autorisees.
+if [ "${NOBROKER:-0}" = "1" ]; then
+    if [ -f /usr/local/lib/no_broker.so ]; then
+        export LD_PRELOAD=/usr/local/lib/no_broker.so
+        echo "  NOBROKER=1 : courtier COUPE (travail hors ligne)"
+    else
+        echo "  !! NOBROKER=1 mais /usr/local/lib/no_broker.so absent : courtier NON coupe"
+    fi
+else
+    echo "  courtier autorise (NOBROKER desactive : l'instance doit tirer ses donnees)"
+fi
 
 # --- 6. les travailleurs (et PAS le surveillant de la boucle locale)
 # Deux mesures du 16/10 en LISANT le code de travailleur_vast.py :
