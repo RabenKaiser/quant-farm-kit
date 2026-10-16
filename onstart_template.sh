@@ -84,18 +84,22 @@ if [ ! -d "$WINEPREFIX/drive_c" ]; then
     echo "  prefixe pret : $WINEPREFIX (code $?, journal wineboot.log)"
 fi
 
-# --- 4. ini de contact (compte maitre, sans session : auth echoue, base quand meme)
+# --- 4. ini de contact. Les identifiants viennent de l'ENVIRONNEMENT du template
+# (DEMO_LOGIN / DEMO_PASSWORD) : le depot public n'en contient AUCUN. Sans variables,
+# on retombe sur le compte maitre sans mot de passe valide : le terminal demarre,
+# l'autorisation echoue, mais la base de symboles se construit quand meme.
 mkdir -p "$MT5/config"
-cat > "$MT5/config/contact.ini" <<'EOF'
+cat > "$MT5/config/contact.ini" <<EOF
 [Common]
-Login=798154993
-Password=x
-Server=Dukascopy-demo-mt5-1
+Login=${DEMO_LOGIN:-798154993}
+Password=${DEMO_PASSWORD:-x}
+Server=${DEMO_SERVER:-Dukascopy-demo-mt5-1}
 ProxyEnable=0
 NewsEnable=0
 MaxBars=5000000
 [StartUp]
 EOF
+echo "  ini ecrit (login ${DEMO_LOGIN:-798154993}, identifiants ${DEMO_PASSWORD:+fournis}${DEMO_PASSWORD:-absents})"
 
 # --- 5. quarantaine respectee par construction
 export LD_PRELOAD=/usr/local/lib/no_broker.so
@@ -103,10 +107,13 @@ export LD_PRELOAD=/usr/local/lib/no_broker.so
 
 # --- 6. superviseur de la meule
 cd "$MT5"
-if ! pgrep -f superviseur_boucle >/dev/null 2>&1; then
-    nohup python3 "${WORKSPACE:-/workspace}/scripts/research/superviseur_boucle.py" \
-        >> "$RES/superviseur.log" 2>&1 &
-    echo "superviseur lance (pid $!)"
+SUP="${WORKSPACE:-/workspace}/scripts/superviseur_boucle.py"
+[ -f "$SUP" ] || SUP="${WORKSPACE:-/workspace}/scripts/research/superviseur_boucle.py"
+if [ ! -f "$SUP" ]; then
+    echo "!! superviseur introuvable (cherche dans scripts/ et scripts/research/) - kit incomplet ?"
+elif ! pgrep -f superviseur_boucle >/dev/null 2>&1; then
+    nohup python3 "$SUP" >> "$RES/superviseur.log" 2>&1 &
+    echo "superviseur lance (pid $!) : $SUP"
 else
     echo "superviseur deja actif"
 fi
