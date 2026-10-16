@@ -261,7 +261,10 @@ FILE="${QUEUE_DB:-${WORKSPACE:-/workspace}/queue/usine_indus.db}"
 TRAV="$SCR/burst/travailleur_vast.py"
 if [ "$WORKERS" -gt 0 ] 2>/dev/null && [ -f "$TRAV" ] && [ -f "$FILE" ]; then
     if ! pgrep -f "Xvfb :99" >/dev/null 2>&1; then
-        setsid nohup Xvfb :99 -screen 0 1280x1024x24 > "$RES/xvfb99.log" 2>&1 < /dev/null &
+        # -ac : SANS controle d'acces. Mesure du 16/10 : un ecran lance sans -ac refuse les
+        # clients wine qui n'ont pas le bon cookie ("Authorization required, but no
+        # authorization protocol specified") et le terminal sort en une seconde.
+        setsid nohup Xvfb :99 -screen 0 1280x1024x24 -ac > "$RES/xvfb99.log" 2>&1 < /dev/null &
         sleep 3
         echo "  Xvfb :99 lance (le travailleur l'exige)"
     fi
