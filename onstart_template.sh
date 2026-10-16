@@ -68,26 +68,49 @@ if [ ! -x /opt/wine-stable/bin/wine ]; then
     dpkg --add-architecture i386
     # PIEGE : l'image de base Vast livre un winehq.sources PERIME qui entre en conflit.
     rm -f /etc/apt/sources.list.d/winehq*.sources /etc/apt/sources.list.d/winehq*.list
-    cat > /etc/apt/sources.list.d/winehq.sources <<'EOF'
+    # DISTRO-AWARE (mesure du 16/10) : un loueur fournissait une image **Debian 13 trixie**,
+    # et la recette ecrite pour Ubuntu noble y echouait sur DEUX points : cle de signature
+    # absente pour la suite noble, et conflits de libc entre les paquets Ubuntu et Debian.
+    # WineHQ publie pour ubuntu ET pour debian, avec une suite = le nom de code de la
+    # distribution. On lit donc /etc/os-release au lieu de supposer.
+    DISTRO="ubuntu"; SUITE="noble"
+    if [ -r /etc/os-release ]; then
+        . /etc/os-release
+        DISTRO="${ID:-ubuntu}"
+        SUITE="${VERSION_CODENAME:-noble}"
+    fi
+    case "$DISTRO" in ubuntu|debian) ;; *) DISTRO="ubuntu" ;; esac
+    cat > /etc/apt/sources.list.d/winehq.sources <<EOF
 Types: deb
-URIs: https://dl.winehq.org/wine-builds/ubuntu
-Suites: noble
+URIs: https://dl.winehq.org/wine-builds/$DISTRO
+Suites: $SUITE
 Components: main
 Trusted: yes
 EOF
+    echo "  depot WineHQ : $DISTRO / $SUITE"
     apt-get update -qq > "$RES/apt_wine_update.log" 2>&1 || { echo "!! apt-get update (winehq) a echoue"; exit 1; }
     # NB : --install-recommends n'existe PAS pour apt-get install ; on passe par -o.
-    apt-get install -y -qq -o APT::Install-Recommends=true winehq-stable > "$RES/apt_wine.log" 2>&1 \
-        || { echo "!! installation de winehq-stable echouee (voir $RES/apt_wine.log)"; exit 1; }
+    if ! apt-get install -y -qq -o APT::Install-Recommends=true winehq-stable > "$RES/apt_wine.log" 2>&1; then
+        # REPLI : le wine de la distribution. Mesure du 16/10 : Debian 13 fournit wine 10.0,
+        # qui sait faire tourner MT5 ; mieux vaut une version un cran plus ancienne que rien.
+        echo "  !! winehq-stable indisponible : repli sur le wine de la distribution"
+        apt-get install -y -qq wine wine64 wine32:i386 >> "$RES/apt_wine.log" 2>&1 \
+            || apt-get install -y -qq wine >> "$RES/apt_wine.log" 2>&1 \
+            || { echo "!! aucun wine installable (voir $RES/apt_wine.log)"; exit 1; }
+    fi
 else
     echo "  Wine deja present"
 fi
 if /opt/wine-stable/bin/wine --version > /dev/null 2>&1; then
     echo "  Wine : $(/opt/wine-stable/bin/wine --version)"
+elif command -v wine >/dev/null 2>&1; then
+    # repli : le wine de la distribution, pose dans /usr/bin
+    export PATH="/usr/bin:${PATH}"
+    echo "  Wine (distribution) : $(wine --version)"
 else
     echo "!! Wine ne repond pas (voir $RES/apt_wine.log)"; exit 1
 fi
-export PATH="/opt/wine-stable/bin:${PATH}"
+[ -x /opt/wine-stable/bin/wine ] && export PATH="/opt/wine-stable/bin:${PATH}"
 
 # --- 2. kit MT5 : telechargement VERIFIE, extraction VERIFIEE
 kit_casse() { [ ! -f "$MT5/terminal64.exe" ] || [ ! -f "$MT5/MetaEditor64.exe" ]; }
