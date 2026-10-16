@@ -41,6 +41,20 @@ else
     ko "EA TRIGGER_LAB.ex5 absent"
 fi
 
+# --- 1b. la charge de travail : sans elle l'instance tourne mais ne fait RIEN
+FILE="${QUEUE_DB:-${WORKSPACE:-/workspace}/queue/usine_indus.db}"
+[ -f "$FILE" ] || FILE="${WORKSPACE:-/workspace}/file/usine_indus.db"
+if [ -f "$FILE" ]; then
+    N=$(python3 -c "import sqlite3,sys; c=sqlite3.connect(sys.argv[1]); print(c.execute('SELECT COUNT(*) FROM jobs WHERE statut=\'PRET\'').fetchone()[0])" "$FILE" 2>/dev/null || echo "?")
+    ok "file de lots presente : $N lot(s) PRET ($FILE)"
+else
+    ko "AUCUNE file de lots : l'instance ne fera rien. Deposer charge_travail.tgz"
+fi
+SETF="${SETFILES_DIR:-${WORKSPACE:-/workspace}/setfiles}"
+NSET=$(ls -1 "$SETF" 2>/dev/null | wc -l)
+[ "$NSET" -gt 0 ] && ok "setfiles presents ($NSET fichiers)" \
+                  || ko "AUCUN setfile dans $SETF : les lots seront refuses"
+
 # --- 2. Wine et le prefixe
 if command -v wine >/dev/null 2>&1; then ok "Wine : $(wine --version 2>/dev/null)"; else ko "Wine introuvable"; fi
 [ -d "$WINEPREFIX/drive_c" ] && ok "prefixe Wine pret" || ko "prefixe Wine absent"
