@@ -108,7 +108,15 @@ if kit_casse; then
     mkdir -p "$MT5"
     tar -xzf /tmp/mt5prog.tgz -C "$MT5" || { echo "!! extraction mt5prog echouee"; exit 1; }
     kit_casse && { echo "!! kit extrait mais incomplete (terminal64.exe/MetaEditor64.exe)"; exit 1; }
+else
+    echo "  kit deja en place : $(du -sh "$MT5" | cut -f1)"
+fi
 
+# --- 2b. les scripts : verifies INDEPENDAMMENT du programme. Sinon un /workspace/scripts
+# efface (ou un premier boot interrompu) ne serait jamais repare, et l'instance
+# demarrerait sans file de travail tout en ayant l'air prete.
+if [ ! -f "$SCR/burst/travailleur_vast.py" ]; then
+    echo "== telecharge les scripts =="
     curl -fsSL --connect-timeout 20 --max-time 300 --retry 3 \
          -o /tmp/scripts_pack.tgz "$KIT_URL/scripts_pack.tgz" \
         || { echo "!! telechargement de scripts_pack echoue"; exit 1; }
@@ -119,9 +127,9 @@ if kit_casse; then
     mkdir -p "$SCR"
     tar -xzf /tmp/scripts_pack.tgz -C "$SCR" || { echo "!! extraction scripts_pack echouee"; exit 1; }
     [ -f "$SCR/burst/travailleur_vast.py" ] || { echo "!! travailleur_vast.py absent du kit"; exit 1; }
-    echo "  kit en place : $(du -sh "$MT5" | cut -f1) + scripts"
+    echo "  scripts en place"
 else
-    echo "  kit deja en place : $(du -sh "$MT5" | cut -f1)"
+    echo "  scripts deja en place"
 fi
 
 # --- 3. prefixe Wine (copie du gabarit si present, sinon creation VERIFIEE)
