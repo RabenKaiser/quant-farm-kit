@@ -35,6 +35,8 @@ LOG="$RES/onstart_$(date +%Y%m%d_%H%M%S).log"
 # tailles attendues du kit publie (verifiees octet pour octet le 16/10)
 TAILLE_PART=65959979
 TAILLE_TOTALE=131919958
+# empreinte du programme prouve, verifiee par le verificateur independant le 16/10
+SHA_MT5=9d2e0ef4b9bf1738a4188c3b28196f0feab774e826b9ae622d4a95b4cfb553eb
 
 mkdir -p "$RES" "${WORKSPACE:-/workspace}/jobs"
 exec > >(tee -a "$LOG") 2>&1
@@ -49,12 +51,13 @@ echo "  espace libre : $(( ${LIBRE:-0} / 1024 )) Mo"
 [ -n "${KIT_URL:-}" ] || { echo "!! KIT_URL n'est pas defini dans le template"; exit 1; }
 
 # --- 1. prerequis systeme (avec VERIFICATION, pas de silence)
-if ! command -v xvfb-run >/dev/null 2>&1 || ! command -v curl >/dev/null 2>&1; then
+# procps : le travailleur utilise pgrep/pkill ; sqlite3 : confort de diagnostic.
+if ! command -v xvfb-run >/dev/null 2>&1 || ! command -v curl >/dev/null 2>&1 || ! command -v pgrep >/dev/null 2>&1; then
     apt-get update -qq > "$RES/apt_update.log" 2>&1 || { echo "!! apt-get update a echoue (voir $RES/apt_update.log)"; exit 1; }
-    apt-get install -y -qq xvfb curl ca-certificates gnupg > "$RES/apt_prereq.log" 2>&1 \
+    apt-get install -y -qq xvfb curl ca-certificates gnupg procps sqlite3 > "$RES/apt_prereq.log" 2>&1 \
         || { echo "!! installation des prerequis echouee (voir $RES/apt_prereq.log)"; exit 1; }
 fi
-for o in xvfb-run curl tar; do
+for o in xvfb-run curl tar pgrep python3; do
     command -v "$o" >/dev/null 2>&1 || { echo "!! $o manquant apres installation"; exit 1; }
 done
 echo "  prerequis systeme : ok"
@@ -104,6 +107,16 @@ if kit_casse; then
     cat /tmp/mt5prog.tgz.part-aa /tmp/mt5prog.tgz.part-ab > /tmp/mt5prog.tgz
     T=$(stat -c %s /tmp/mt5prog.tgz)
     [ "$T" -eq "$TAILLE_TOTALE" ] || { echo "!! kit recolle = $T o au lieu de $TAILLE_TOTALE"; exit 1; }
+    # Empreinte : une taille correcte ne prouve pas un contenu correct. Le programme
+    # MT5 est FIGE (prouve le 16/10) : si l'empreinte change, c'est qu'autre chose a
+    # ete publie -- on refuse de demarrer plutot que de diagnostiquer un fantome.
+    if command -v sha256sum >/dev/null 2>&1; then
+        H=$(sha256sum /tmp/mt5prog.tgz | cut -d' ' -f1)
+        [ "$H" = "$SHA_MT5" ] || { echo "!! empreinte du kit differente : $H (attendu $SHA_MT5)"; exit 1; }
+        echo "  empreinte du kit verifiee"
+    else
+        echo "  (sha256sum absent : controle d'empreinte saute, seules les tailles sont verifiees)"
+    fi
     tar -tzf /tmp/mt5prog.tgz > /dev/null 2>&1 || { echo "!! archive mt5prog illisible"; exit 1; }
     mkdir -p "$MT5"
     tar -xzf /tmp/mt5prog.tgz -C "$MT5" || { echo "!! extraction mt5prog echouee"; exit 1; }
@@ -130,6 +143,16 @@ if [ ! -f "$SCR/burst/travailleur_vast.py" ]; then
     echo "  scripts en place"
 else
     echo "  scripts deja en place"
+fi
+
+# --- 2c. l'EA dans l'arbre maitre (pour un test manuel et pour la coherence)
+EA_SRC="$SCR/burst/paquet/MQL5/Experts/eepeek"
+if [ -f "$EA_SRC/TRIGGER_LAB.ex5" ]; then
+    mkdir -p "$MT5/MQL5/Experts/eepeek"
+    cp -f "$EA_SRC/TRIGGER_LAB.ex5" "$EA_SRC/TRIGGER_LAB.mq5" "$MT5/MQL5/Experts/eepeek/" 2>/dev/null
+    echo "  EA installe dans l'arbre maitre"
+else
+    echo "  !! EA absent du paquet de scripts (les tests ne produiraient rien)"
 fi
 
 # --- 3. prefixe Wine (copie du gabarit si present, sinon creation VERIFIEE)
@@ -192,8 +215,16 @@ else
     echo "  courtier autorise (NOBROKER desactive : l'instance doit tirer ses donnees)"
 fi
 
-# --- 6. les travailleurs (et PAS le surveillant de la boucle locale)
-# Deux mesures du 16/10 en LISANT le code de travailleur_vast.py :
+# --- 5b. la charge de travail : si charge_travail.tgz a ete deposee dans WORKSPACE,
+# on la detare ici. Elle porte la file de lots et les setfiles (jamais dans le depot
+# public : ils revelent nos declencheurs). Sans elle, l'instance tourne a vide.
+if [ -f "${WORKSPACE:-/workspace}/charge_travail.tgz" ]; then
+    tar -xzf "${WORKSPACE:-/workspace}/charge_travail.tgz" -C "${WORKSPACE:-/workspace}" \
+        && echo "  charge de travail detaree (file + setfiles)" \
+        || echo "  !! charge_travail.tgz illisible"
+fi
+
+# --- 6. les travailleurs (et PAS le surveillant de la boucle locale)# Deux mesures du 16/10 en LISANT le code de travailleur_vast.py :
 #  a) superviseur_boucle.py est le chien de garde de la boucle LOCALE (version Windows :
 #     chemins C:\ et powershell) : le lancer sur une instance n'a aucun sens ;
 #  b) le travailleur impose DISPLAY=:99 et --prefixe-wine, et il lance terminal64.exe
@@ -230,6 +261,24 @@ if [ "$WORKERS" -gt 0 ] 2>/dev/null && [ -f "$TRAV" ] && [ -f "$FILE" ]; then
             mkdir -p "$DD"
             cp -a "$MT5/." "$DD/" 2>/dev/null
             echo "  datadir W$(printf %02d "$i") prepare (copie du programme)"
+        fi
+        # L'EA : le worker ecrit Expert=eepeek\TRIGGER_LAB.ex5, donc le fichier doit
+        # etre dans <datadir>/MQL5/Experts/eepeek/. Le programme MT5 ne le contient PAS
+        # (verifie : 0 entree eepeek dans mt5prog.tgz) -- il vient du paquet de scripts.
+        # Sans cette copie, chaque lot tourne sans expert et ne produit RIEN.
+        EA_SRC="$SCR/burst/paquet/MQL5/Experts/eepeek"
+        if [ -f "$EA_SRC/TRIGGER_LAB.ex5" ]; then
+            mkdir -p "$DD/MQL5/Experts/eepeek"
+            cp -f "$EA_SRC/TRIGGER_LAB.ex5" "$EA_SRC/TRIGGER_LAB.mq5" "$DD/MQL5/Experts/eepeek/" 2>/dev/null
+        else
+            echo "  !! EA introuvable dans $EA_SRC : les lots ne produiront rien"
+        fi
+        # Les setfiles sont lus par l'EA en FILE_COMMON. En mode /portable, le dossier
+        # "commun" n'est PAS celui du prefixe : on les pose aux DEUX endroits possibles
+        # (214 petits fichiers, le doute coute moins cher qu'un test a zero transaction).
+        if [ "$NSET" -gt 0 ]; then
+            mkdir -p "$DD/MQL5/Files"
+            cp -n "$SETF"/*.txt "$DD/MQL5/Files/" 2>/dev/null
         fi
         if pgrep -f "travailleur_vast.py --travailleur $i " >/dev/null 2>&1; then
             echo "  travailleur $i deja actif"
