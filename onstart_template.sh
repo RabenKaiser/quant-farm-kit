@@ -201,6 +201,9 @@ fi
 #     programme dans chaque datadir.
 WORKERS="${WORKERS:-0}"
 FILE="${QUEUE_DB:-${WORKSPACE:-/workspace}/queue/usine_indus.db}"
+# la charge de travail (charge_travail.tgz) se detare dans ${WORKSPACE}/file : on la
+# trouve la aussi, sans obliger a definir QUEUE_DB a la main.
+[ -f "$FILE" ] || FILE="${WORKSPACE:-/workspace}/file/usine_indus.db"
 TRAV="$SCR/burst/travailleur_vast.py"
 if [ "$WORKERS" -gt 0 ] 2>/dev/null && [ -f "$TRAV" ] && [ -f "$FILE" ]; then
     if ! pgrep -f "Xvfb :99" >/dev/null 2>&1; then
